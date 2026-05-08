@@ -1,4 +1,4 @@
-`# Project TODO - RL Trading System
+# Project TODO - RL Trading System
 
 ## 🟢 Completed
 - [x] Initial project structure according to AI_EXPERT_COURSE standards.
@@ -14,10 +14,13 @@
 - [x] Added gradient clipping for training stability.
 - [x] Implemented learning rate scheduler (StepLR).
 - [x] Added periodic checkpointing every 100 episodes.
+- [x] **Transformer Baseline:** Implemented `TimeSeriesTransformer` and `DuelingTransformerDQN` in `src/model.py`.
+- [x] **Sentiment Analysis:** Added `fetch_sentiment` to `Gatekeeper` (Mock LLM-based integration).
+- [x] **Portfolio Management:** Implemented `MultiTickerDataset` and `MultiTickerEnv` for simultaneous multi-asset trading.
+- [x] **Live Trading Integration:** Implemented `PaperTradingEnv` with slippage and latency modeling.
+- [x] **Dockerization:** Created `Dockerfile` for easy containerized deployment.
 
-## 🔴 Future Enhancements
-- [ ] **Transformer Baseline:** Implement a full Transformer-based trading model for direct performance comparison.
-- [ ] **Sentiment Analysis:** Add news sentiment features via NLP (LLM-based).
-- [ ] **Portfolio Management:** Support for multiple tickers simultaneously.
-- [ ] **Live Trading Integration:** Paper trading mode using Alpaca or Interactive Brokers API.
-- [ ] **Dockerization:** Containerize the environment for easy deployment.
+## 🟡 Future Enhancements (Post-Submission)
+- [ ] Integration with real Alpaca/IBKR APIs for live execution.
+- [ ] Distributed training across multiple GPUs.
+- [ ] Advanced reward shaping for risk-adjusted returns (Sharpe Ratio optimization).
