@@ -1,4 +1,0 @@
-Win Rate: 38.20%
-Directional Accuracy: 55.93%
-Average Confidence: 0.3376
-Final Portfolio: $11158.39
