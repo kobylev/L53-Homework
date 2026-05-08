@@ -4,7 +4,9 @@
       "Bash(python:*)",
       "Bash(pip install:*)",
       "Bash(dir:*)",
-      "Bash(del generate_mock_evaluation.py evaluation_graph.png)"
+      "Bash(del generate_mock_evaluation.py evaluation_graph.png)",
+      "Bash(pytest:*)",
+      "Bash(nul)"
     ],
     "deny": [],
     "ask": []

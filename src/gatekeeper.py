@@ -30,7 +30,7 @@ class Gatekeeper:
     def _initialize(self):
         self.last_call_time = 0
         self.min_interval = 2.0
-        self.allowed_tickers = re.compile(r'^[A-Z]{1,5}$')
+        self.allowed_tickers = re.compile(r'^[A-Z]{1,5}(\.[A-Z])?$')
         self.validation_cache = {}
         self.last_heartbeat = time.time()
         self.request_count = 0

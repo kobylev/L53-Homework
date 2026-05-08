@@ -11,7 +11,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.model import DuelingDQN
 from src.datasets import TradingDataset, TradingEnv, get_train_test_split
-from src.config import *
+from src.config import TICKER, DEVICE, MODEL_PATH, WINDOW_SIZE, LOGS_DIR
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -19,38 +19,53 @@ logger = logging.getLogger(__name__)
 
 def calculate_risk_metrics(portfolio_values, risk_free_rate=0.02):
     """
-    FIX: Integrated Risk Metrics calculation.
-    Calculates Sharpe Ratio, Max Drawdown, and Calmar Ratio.
+    FIX 2: Complete Risk-Adjusted Metrics calculation.
+    Calculates Sharpe, Sortino, Max Drawdown, Calmar, and Annualized Volatility.
     """
     # 1. Daily Returns
     portfolio_values = np.array(portfolio_values)
     daily_returns = np.diff(portfolio_values) / portfolio_values[:-1]
-    
+
     # 2. Annualized Return
     total_return = (portfolio_values[-1] / portfolio_values[0]) - 1
     num_days = len(portfolio_values)
     annualized_return = (1 + total_return) ** (252 / num_days) - 1
-    
+
     # 3. Annualized Sharpe Ratio
-    # Formula: (Avg Return - Risk Free) / Std Dev * sqrt(252)
+    # Formula: (mean_return - Rf) / std(returns) * sqrt(252)
     daily_rf = (1 + risk_free_rate) ** (1 / 252) - 1
     excess_returns = daily_returns - daily_rf
     sharpe_ratio = np.mean(excess_returns) / (np.std(daily_returns) + 1e-9) * np.sqrt(252)
-    
+
     # 4. Maximum Drawdown
-    # Formula: (Peak - Current) / Peak
+    # Formula: min((portfolio - running_max) / running_max)
     cumulative_max = np.maximum.accumulate(portfolio_values)
     drawdowns = (cumulative_max - portfolio_values) / cumulative_max
     max_drawdown = np.max(drawdowns)
-    
+
     # 5. Calmar Ratio
-    # Formula: Annualized Return / Absolute Max Drawdown
+    # Formula: annualized_return / abs(max_drawdown)
     calmar_ratio = annualized_return / (max_drawdown + 1e-9)
-    
+
+    # 6. Sortino Ratio (penalizes only downside volatility)
+    # Formula: mean_return / downside_std * sqrt(252)
+    negative_returns = excess_returns[excess_returns < 0]
+    if len(negative_returns) == 0 or np.std(negative_returns) == 0:
+        sortino_ratio = 0.0
+    else:
+        downside_std = np.std(negative_returns)
+        sortino_ratio = np.mean(excess_returns) / downside_std * np.sqrt(252)
+
+    # 7. Annualized Volatility
+    # Formula: std(returns) * sqrt(252)
+    annualized_volatility = np.std(daily_returns) * np.sqrt(252)
+
     return {
         "sharpe_ratio": sharpe_ratio,
+        "sortino_ratio": sortino_ratio,
         "max_drawdown": max_drawdown,
         "calmar_ratio": calmar_ratio,
+        "annualized_volatility": annualized_volatility,
         "total_return": total_return
     }
 
@@ -106,8 +121,10 @@ def evaluate(ticker=None):
     logger.info(f"Total Return: {risk_metrics['total_return']*100:.2f}%")
     logger.info(f"Win Rate: {win_rate:.2f}%")
     logger.info(f"Sharpe Ratio: {risk_metrics['sharpe_ratio']:.4f}")
+    logger.info(f"Sortino Ratio: {risk_metrics['sortino_ratio']:.4f}")
     logger.info(f"Max Drawdown: {risk_metrics['max_drawdown']*100:.2f}%")
     logger.info(f"Calmar Ratio: {risk_metrics['calmar_ratio']:.4f}")
+    logger.info(f"Annualized Volatility: {risk_metrics['annualized_volatility']*100:.2f}%")
     logger.info(f"Avg Confidence: {avg_confidence:.4f}")
     logger.info("-" * 30)
     
