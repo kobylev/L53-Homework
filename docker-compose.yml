@@ -1,0 +1,172 @@
+version: '3.8'
+
+# ============================================================================
+# RL Trading System - Multi-Service Docker Compose Configuration
+# ============================================================================
+#
+# Services:
+# - training:    Runs the DQN training pipeline
+# - dashboard:   Streamlit web interface for visualization
+# - evaluation:  Generates evaluation graphs and metrics
+# - transformer: Trains the Transformer baseline model (optional)
+#
+# Usage:
+#   Start all services:      docker-compose up
+#   Start specific service:  docker-compose up dashboard
+#   Run training only:       docker-compose run training
+#   Run with GPU:            docker-compose -f docker-compose.yml -f docker-compose.gpu.yml up
+# ============================================================================
+
+services:
+  # ==========================================================================
+  # Training Service - Main DQN Model Training
+  # ==========================================================================
+  training:
+    build:
+      context: .
+      target: training
+    container_name: rl-trading-training
+    volumes:
+      - ./assets:/app/assets
+      - ./src:/app/src:ro  # Read-only mount for code
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DEVICE=cpu
+    command: python -m src.main --mode train --ticker MSFT
+    networks:
+      - trading-network
+    restart: unless-stopped
+
+  # ==========================================================================
+  # Transformer Training Service (Optional Baseline)
+  # ==========================================================================
+  transformer-training:
+    build:
+      context: .
+      target: training
+    container_name: rl-trading-transformer
+    volumes:
+      - ./assets:/app/assets
+      - ./src:/app/src:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DEVICE=cpu
+    command: python -m src.train_transformer --ticker MSFT
+    networks:
+      - trading-network
+    restart: "no"  # Run once
+
+  # ==========================================================================
+  # Evaluation Service - Generate Performance Metrics and Graphs
+  # ==========================================================================
+  evaluation:
+    build:
+      context: .
+      target: evaluation
+    container_name: rl-trading-evaluation
+    volumes:
+      - ./assets:/app/assets
+      - ./evaluation_graph.png:/app/evaluation_graph.png
+    environment:
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - training
+    networks:
+      - trading-network
+    restart: "no"  # Run once after training
+
+  # ==========================================================================
+  # Dashboard Service - Streamlit Web Interface
+  # ==========================================================================
+  dashboard:
+    build:
+      context: .
+      target: dashboard
+    container_name: rl-trading-dashboard
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./assets:/app/assets:ro  # Read-only - dashboard only displays
+      - ./src:/app/src:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+      - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+    depends_on:
+      - training
+    networks:
+      - trading-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ==========================================================================
+  # Model Comparison Service - Compare DQN vs Transformer
+  # ==========================================================================
+  comparison:
+    build:
+      context: .
+      target: evaluation
+    container_name: rl-trading-comparison
+    volumes:
+      - ./assets:/app/assets
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: python -m src.compare_models --ticker MSFT
+    depends_on:
+      - training
+      - transformer-training
+    networks:
+      - trading-network
+    restart: "no"
+
+  # ==========================================================================
+  # Multi-Ticker Portfolio Service (Advanced)
+  # ==========================================================================
+  portfolio:
+    build:
+      context: .
+      target: training
+    container_name: rl-trading-portfolio
+    volumes:
+      - ./assets:/app/assets
+      - ./src:/app/src:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: python -m src.portfolio_manager
+    networks:
+      - trading-network
+    restart: "no"
+
+# ============================================================================
+# Networks
+# ============================================================================
+networks:
+  trading-network:
+    driver: bridge
+    name: rl-trading-net
+
+# ============================================================================
+# Volumes (for persistent data)
+# ============================================================================
+volumes:
+  model-data:
+    name: rl-trading-models
+  logs-data:
+    name: rl-trading-logs
+
+# ============================================================================
+# Common Commands:
+# ============================================================================
+# Full pipeline:           docker-compose up training evaluation dashboard
+# Dashboard only:          docker-compose up dashboard
+# Train + Compare:         docker-compose up training transformer-training comparison
+# Multi-ticker portfolio:  docker-compose up portfolio
+# Clean up:                docker-compose down -v
+# View logs:               docker-compose logs -f training
+# ============================================================================
