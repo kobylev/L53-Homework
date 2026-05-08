@@ -3,7 +3,8 @@
     "allow": [
       "Bash(python:*)",
       "Bash(pip install:*)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(del generate_mock_evaluation.py evaluation_graph.png)"
     ],
     "deny": [],
     "ask": []

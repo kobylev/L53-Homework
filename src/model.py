@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from copy import deepcopy
 
 class CNNExtractor(nn.Module):
     def __init__(self, in_channels=4):
@@ -20,31 +21,84 @@ class CNNExtractor(nn.Module):
         return x.view(x.size(0), -1) # [Batch, 64]
 
 class DuelingDQN(nn.Module):
-    def __init__(self, n_actions=3):
+    def __init__(self, n_actions=3, use_target_network=True):
         super(DuelingDQN, self).__init__()
         self.feature_extractor = CNNExtractor()
-        
+
         # Advantage stream
         self.advantage = nn.Sequential(
             nn.Linear(64, 128),
             nn.ReLU(),
             nn.Linear(128, n_actions)
         )
-        
+
         # Value stream
         self.value = nn.Sequential(
             nn.Linear(64, 128),
             nn.ReLU(),
             nn.Linear(128, 1)
         )
-        
+
+        # Target network (frozen copy for stable Q-value bootstrapping)
+        if use_target_network:
+            self.target_net = deepcopy(self)
+            self.target_net.eval()  # Set to eval mode
+            for param in self.target_net.parameters():
+                param.requires_grad = False
+        else:
+            self.target_net = None
+
     def forward(self, x):
         features = self.feature_extractor(x)
         advantage = self.advantage(features)
         value = self.value(features)
-        
+
         # Combine: Q(s,a) = V(s) + (A(s,a) - mean(A(s,a)))
         return value + (advantage - advantage.mean(dim=1, keepdim=True))
+
+    def sync_target(self):
+        """
+        Hard update: Copy online network weights to target network.
+        Use this periodically (e.g., every N episodes) for traditional DQN.
+        """
+        if self.target_net is not None:
+            self.target_net.load_state_dict(self.state_dict())
+
+    def soft_update_target(self, tau=0.005):
+        """
+        Soft update (Polyak averaging): Gradually update target network.
+        target_param = tau * online_param + (1 - tau) * target_param
+
+        Args:
+            tau: Interpolation coefficient (0 < tau << 1, typically 0.001-0.01)
+
+        Use this after every optimizer step for smoother Q-value targets.
+        """
+        if self.target_net is not None:
+            for target_param, online_param in zip(self.target_net.parameters(), self.parameters()):
+                target_param.data.copy_(tau * online_param.data + (1.0 - tau) * target_param.data)
+
+    # TRAINING LOOP INTEGRATION GUIDE:
+    # ================================
+    # 1. Initialize model with target network:
+    #    model = DuelingDQN(n_actions=3, use_target_network=True)
+    #
+    # 2. During training, compute target Q-values using target_net:
+    #    with torch.no_grad():
+    #        next_q_values = model.target_net(next_states).max(1)[0]
+    #        target_q = rewards + GAMMA * next_q_values * (1 - dones)
+    #
+    # 3. Compute online Q-values and loss:
+    #    current_q = model(states).gather(1, actions.unsqueeze(1))
+    #    loss = F.smooth_l1_loss(current_q, target_q.unsqueeze(1))
+    #
+    # 4. After optimizer step, update target network:
+    #    Option A (soft update - recommended, use every step):
+    #        model.soft_update_target(tau=0.005)
+    #
+    #    Option B (hard update - use every N episodes, e.g., N=10):
+    #        if episode % TARGET_UPDATE == 0:
+    #            model.sync_target()
 
 class TransformerExtractor(nn.Module):
     """Transformer-based feature extractor for temporal patterns"""

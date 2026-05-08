@@ -34,6 +34,7 @@ class Gatekeeper:
         self.validation_cache = {}
         self.last_heartbeat = time.time()
         self.request_count = 0
+        self._rate_limit_lock = threading.Lock()  # Thread-safe rate limiting
         logger.info("Gatekeeper: Initialized and secured.")
 
     def is_healthy(self) -> bool:
@@ -52,31 +53,43 @@ class Gatekeeper:
         sanitized = self._sanitize_ticker(ticker)
         return hashlib.sha256(sanitized.encode()).hexdigest()[:16]
 
+    def validate_ticker(self, ticker: str) -> bool:
+        """
+        Validates ticker format using whitelist regex.
+        Returns True if ticker matches pattern ^[A-Z]{1,5}$, False otherwise.
+        """
+        if not isinstance(ticker, str):
+            return False
+        ticker = ticker.upper().strip()
+        return self.allowed_tickers.match(ticker) is not None
+
     def _sanitize_ticker(self, ticker: str) -> str:
         """Strictly sanitizes the ticker symbol symbol using whitelist regex."""
         if not isinstance(ticker, str):
             raise ValueError("Ticker must be a string.")
-        
+
         ticker = ticker.upper().strip()
         if not self.allowed_tickers.match(ticker):
             logger.warning(f"SECURITY ALERT: Malicious ticker attempt blocked: {ticker}")
             raise ValueError(f"Invalid or malicious ticker: {ticker}")
-        
+
         return ticker
 
     def _rate_limit(self):
         """
         Load Balancing & Rate Limiting: Manages traffic to adhere to free-tier limits.
         Uses jittered delays to prevent pattern detection and service blocking.
+        Thread-safe: Ensures atomic read/write of last_call_time across concurrent calls.
         """
-        elapsed = time.time() - self.last_call_time
-        if elapsed < self.min_interval:
-            wait_time = self.min_interval - elapsed + (random.random() * 0.5)
-            logger.info(f"Gatekeeper: Throttling active. Waiting {wait_time:.2f}s")
-            time.sleep(wait_time)
-        self.last_call_time = time.time()
-        self.request_count += 1
-        self._pulse()
+        with self._rate_limit_lock:
+            elapsed = time.time() - self.last_call_time
+            if elapsed < self.min_interval:
+                wait_time = self.min_interval - elapsed + (random.random() * 0.5)
+                logger.info(f"Gatekeeper: Throttling active. Waiting {wait_time:.2f}s")
+                time.sleep(wait_time)
+            self.last_call_time = time.time()
+            self.request_count += 1
+            self._pulse()
 
     def validate_ticker_exists(self, ticker: str) -> bool:
         """Checks if the ticker exists with security proxying and retries."""
@@ -179,3 +192,34 @@ class GatekeeperWatchdog(threading.Thread):
 gatekeeper = Gatekeeper()
 watchdog = GatekeeperWatchdog(gatekeeper)
 watchdog.start()
+
+if __name__ == '__main__':
+    # Unit tests for validate_ticker method
+    test_gatekeeper = Gatekeeper()
+
+    # Test valid ticker
+    assert test_gatekeeper.validate_ticker("AAPL") == True, "Valid ticker AAPL should return True"
+    print("✓ Test passed: validate_ticker('AAPL') → True")
+
+    # Test ticker with numbers (invalid)
+    assert test_gatekeeper.validate_ticker("AAPL123") == False, "Invalid ticker AAPL123 should return False"
+    print("✓ Test passed: validate_ticker('AAPL123') → False")
+
+    # Test empty string (invalid)
+    assert test_gatekeeper.validate_ticker("") == False, "Empty string should return False"
+    print("✓ Test passed: validate_ticker('') → False")
+
+    # Additional edge cases
+    assert test_gatekeeper.validate_ticker("A") == True, "Single letter ticker should return True"
+    print("✓ Test passed: validate_ticker('A') → True")
+
+    assert test_gatekeeper.validate_ticker("ABCDE") == True, "Five letter ticker should return True"
+    print("✓ Test passed: validate_ticker('ABCDE') → True")
+
+    assert test_gatekeeper.validate_ticker("ABCDEF") == False, "Six letter ticker should return False"
+    print("✓ Test passed: validate_ticker('ABCDEF') → False")
+
+    assert test_gatekeeper.validate_ticker("abc") == True, "Lowercase ticker (normalized) should return True"
+    print("✓ Test passed: validate_ticker('abc') → True (normalized to ABC)")
+
+    print("\n✅ All unit tests passed!")

@@ -4,6 +4,7 @@ import torch
 import os
 import sys
 import logging
+import random
 from ta.momentum import RSIIndicator
 from ta.trend import MACD
 
@@ -69,13 +70,9 @@ class TradingDataset:
         
         # Select features: Close, Volume, RSI, MACD
         features = df[['Close', 'Volume', 'RSI', 'MACD']].copy()
-        
-        # Normalize features (Min-Max scaling for stability in RL)
-        self.min_vals = features.min()
-        self.max_vals = features.max()
-        normalized_df = (features - self.min_vals) / (self.max_vals - self.min_vals)
-        
-        return normalized_df
+
+        # Return raw features (normalization happens after train/test split to prevent data leakage)
+        return features
 
     def get_windows(self):
         data_arr = self.data.values
@@ -96,6 +93,44 @@ def get_train_test_split(dataset, split_ratio=0.8):
     test_data = windows[split_idx:]
     return train_data, test_data
 
+def build_split_and_normalize(dataset, split_ratio=0.8):
+    """
+    Splits raw windows by time and normalizes using ONLY training statistics.
+    Prevents data leakage by fitting scaler exclusively on training set.
+
+    Args:
+        dataset: TradingDataset instance with raw (unnormalized) features
+        split_ratio: Proportion of data for training (default 0.8)
+
+    Returns:
+        train_tensor: Normalized training windows [N_train, Features, Window]
+        test_tensor: Normalized test windows [N_test, Features, Window]
+        train_min: Min values from training set for each feature
+        train_max: Max values from training set for each feature
+    """
+    # Get raw windows [Samples, Features, Window]
+    windows = dataset.get_windows()
+
+    # Split by time index (no shuffle to preserve temporal order)
+    split_idx = int(len(windows) * split_ratio)
+    train_windows = windows[:split_idx]
+    test_windows = windows[split_idx:]
+
+    # Compute min/max statistics ONLY on training data
+    # Flatten over batch and time dimensions [N_train, Features, Window] -> [Features]
+    train_min = train_windows.min(dim=0)[0].min(dim=1)[0]  # [Features]
+    train_max = train_windows.max(dim=0)[0].max(dim=1)[0]  # [Features]
+
+    # Prevent division by zero for constant features
+    range_vals = train_max - train_min
+    range_vals = torch.where(range_vals == 0, torch.ones_like(range_vals), range_vals)
+
+    # Apply min-max normalization using training statistics to both sets
+    train_normalized = (train_windows - train_min.unsqueeze(0).unsqueeze(2)) / range_vals.unsqueeze(0).unsqueeze(2)
+    test_normalized = (test_windows - train_min.unsqueeze(0).unsqueeze(2)) / range_vals.unsqueeze(0).unsqueeze(2)
+
+    return train_normalized.float(), test_normalized.float(), train_min.float(), train_max.float()
+
 class TradingEnv:
     """A simple trading environment for the RL agent."""
     def __init__(self, data_tensor, original_prices, initial_balance=10000.0, fee=0.001):
@@ -115,35 +150,41 @@ class TradingEnv:
 
     def step(self, action):
         # Actions: 0: Hold, 1: Buy, 2: Sell
+
+        # Step 1: Record current portfolio value BEFORE action
         current_price = self.prices[self.current_step + WINDOW_SIZE - 1]
-        
-        reward = 0
-        if action == 1: # Buy
+        old_portfolio_value = self.balance + self.shares * current_price
+
+        # Step 2: Apply action
+        if action == 1:  # Buy
             if self.balance > current_price:
                 shares_to_buy = self.balance // (current_price * (1 + self.fee))
                 if shares_to_buy > 0:
                     self.shares += shares_to_buy
                     self.balance -= shares_to_buy * current_price * (1 + self.fee)
-        elif action == 2: # Sell
+        elif action == 2:  # Sell
             if self.shares > 0:
                 self.balance += self.shares * current_price * (1 - self.fee)
                 self.shares = 0
-        
+
+        # Step 3: Increment timestep
         self.current_step += 1
         if self.current_step >= len(self.data) - 1:
             self.done = True
-        
-        # Calculate Portfolio Value
-        portfolio_value = self.balance + self.shares * current_price
-        
-        # Reward is the change in portfolio value
-        # Simple reward: total portfolio value at the end or step-wise gain
+
+        # Step 4: Compute new portfolio value using NEXT price (after increment)
         next_price = self.prices[self.current_step + WINDOW_SIZE - 1]
-        next_portfolio_value = self.balance + self.shares * next_price
-        reward = (next_portfolio_value - portfolio_value) / portfolio_value
-        
+        new_portfolio_value = self.balance + self.shares * next_price
+
+        # Step 5: Calculate reward as portfolio value change ratio
+        reward = (new_portfolio_value - old_portfolio_value) / old_portfolio_value
+
+        # Step 6: Add penalty for trading (discourage over-trading)
+        if action != 0:  # 0 = Hold
+            reward -= 0.001
+
         self.total_reward += reward
-        return self.data[self.current_step], reward, self.done, portfolio_value
+        return self.data[self.current_step], reward, self.done, new_portfolio_value
 
 class PaperTradingEnv(TradingEnv):
     """
@@ -156,8 +197,9 @@ class PaperTradingEnv(TradingEnv):
         dataset = TradingDataset(ticker=ticker)
         self.full_dataset = dataset
         data_tensor = dataset.get_windows()
-        prices = dataset.data['Close'].values * (dataset.max_vals['Close'] - dataset.min_vals['Close']) + dataset.min_vals['Close']
-        
+        # Use raw Close prices (dataset now returns unnormalized data)
+        prices = dataset.data['Close'].values
+
         super().__init__(data_tensor, prices, initial_balance, fee)
         logger.info(f"PaperTrading: Initialized for {ticker} with ${initial_balance:.2f} balance.")
 
@@ -233,28 +275,46 @@ class MultiTickerEnv:
 
     def step(self, actions):
         # actions: list of actions, one for each ticker
-        total_portfolio_value = self.balance
+
+        # Step 1: Record current portfolio value and positions BEFORE actions
         current_prices = {ticker: self.prices.iloc[self.current_step + WINDOW_SIZE - 1][ticker] for ticker in self.tickers}
-        
+        old_portfolio_value = self.balance
+        for ticker in self.tickers:
+            old_portfolio_value += self.shares[ticker] * current_prices[ticker]
+
+        # Step 2: Apply actions for each ticker
         for i, ticker in enumerate(self.tickers):
             action = actions[i]
             price = current_prices[ticker]
-            
-            if action == 1: # Buy
+
+            if action == 1:  # Buy
                 if self.balance > price:
                     shares_to_buy = self.balance // (len(self.tickers) * price * (1 + self.fee))
                     if shares_to_buy > 0:
                         self.shares[ticker] += shares_to_buy
                         self.balance -= shares_to_buy * price * (1 + self.fee)
-            elif action == 2: # Sell
+            elif action == 2:  # Sell
                 if self.shares[ticker] > 0:
                     self.balance += self.shares[ticker] * price * (1 - self.fee)
                     self.shares[ticker] = 0
-            
-            total_portfolio_value += self.shares[ticker] * price
-        
+
+        # Step 3: Increment timestep
         self.current_step += 1
         if self.current_step >= len(self.data) - 1:
             self.done = True
-            
-        return self.data[self.current_step], 0, self.done, total_portfolio_value
+
+        # Step 4: Compute new portfolio value using NEXT prices
+        next_prices = {ticker: self.prices.iloc[self.current_step + WINDOW_SIZE - 1][ticker] for ticker in self.tickers}
+        new_portfolio_value = self.balance
+        for ticker in self.tickers:
+            new_portfolio_value += self.shares[ticker] * next_prices[ticker]
+
+        # Step 5: Calculate reward as weighted portfolio delta
+        # Compute contribution of each ticker to overall return
+        reward = (new_portfolio_value - old_portfolio_value) / old_portfolio_value
+
+        # Add penalty for each non-Hold action to discourage over-trading
+        num_trades = sum(1 for action in actions if action != 0)
+        reward -= num_trades * 0.001
+
+        return self.data[self.current_step], reward, self.done, new_portfolio_value

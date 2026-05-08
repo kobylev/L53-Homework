@@ -56,7 +56,14 @@ Standard tabular stock data (Price, Volume, RSI) is fundamentally a 1D signal ov
 In a standard DQN, the model estimates a single Q-value for each state-action pair. In volatile markets, many states have a high intrinsic value (e.g., a strong bull trend) where any action (Buy or Hold) might seem "good." The **Dueling DQN** architecture splits the network into two streams:
 1. **Value Stream (V-Score):** Estimating the quality of the current market state.
 2. **Advantage Stream (A-Score):** Estimating the relative benefit of a specific action compared to others.
-By combining these (`Q = V + A`), the agent can recognize that certain market states are inherently risky or rewarding, regardless of the immediate action taken, leading to more robust decision-making during range-bound volatility.
+
+The Q-values are combined using **mean-centering** to ensure a unique decomposition:
+
+$$Q(s,a) = V(s) + \left(A(s,a) - \frac{1}{|A|} \sum_{a'} A(s,a')\right)$$
+
+**Why mean-centering is required:** Without subtracting the mean advantage, the decomposition is non-unique—a constant can be freely shifted between V and A, preventing independent learning of the value and advantage streams. Mean-centering forces the advantage function to have zero mean, ensuring that V(s) represents the true state value and A(s,a) represents the genuine relative advantage of each action.
+
+This allows the agent to recognize that certain market states are inherently risky or rewarding, regardless of the immediate action taken, leading to more robust decision-making during range-bound volatility.
 
 ## Security Architecture: The Gatekeeper Pattern
 The `Gatekeeper` module acts as a strict security and rate-limiting proxy for all external API interactions (`yfinance`). It provides three critical layers of defense:
@@ -84,6 +91,27 @@ A background **Watchdog** thread continuously monitors the `Gatekeeper`. It trac
 - **Confidence Level:** 0.3351
 - **Final Portfolio Value:** $10,758.01
 
+### Risk-Adjusted Performance Metrics
+
+The following table presents industry-standard risk-adjusted metrics for comprehensive performance evaluation:
+
+| Metric | Value | Formula | Interpretation |
+|--------|-------|---------|----------------|
+| **Sharpe Ratio** | [PLACEHOLDER — rerun after leakage fix] | $\frac{E[R] - R_f}{\sigma(R)}$ | Risk-adjusted return. Measures excess return per unit of volatility. Values > 1.0 considered good, > 2.0 excellent. |
+| **Max Drawdown** | [PLACEHOLDER] | $\frac{\text{Trough} - \text{Peak}}{\text{Peak}}$ | Largest peak-to-trough decline. Indicates worst-case loss scenario. Lower is better (less negative). |
+| **Calmar Ratio** | [PLACEHOLDER] | $\frac{\text{Annualized Return}}{\|\text{Max Drawdown}\|}$ | Return per unit of downside risk. Higher is better (more return for given drawdown). |
+| **Win Rate** | 41.35% | $\frac{\text{Profitable trades}}{\text{Total trades}}$ | Percentage of trades with positive returns. Note: High ROI can occur with <50% win rate via asymmetric sizing. |
+| **Confidence** | 0.6247 | $\frac{1}{N}\sum_{t=1}^{N} \max(\text{softmax}(Q(s_t)))$ | Mean probability of argmax action. Range [0,1]. Values 0.5-0.7 indicate healthy exploration-exploitation balance. |
+
+**⚠️ Note:** Sharpe Ratio, Max Drawdown, and Calmar Ratio placeholders will be computed after applying FIX 1 (data leakage fix) and retraining the model. Current Win Rate (41.35%) and Confidence (0.6247) are post-optimization values.
+
+**Why These Metrics Matter:**
+- **Sharpe Ratio** reveals if returns justify the volatility risk (critical for institutional adoption)
+- **Max Drawdown** shows psychological tolerance required during losing streaks
+- **Calmar Ratio** balances long-term profitability against worst-case scenarios
+- **Win Rate** alone is misleading—asymmetric returns (big wins, small losses) can yield high ROI with <50% win rate
+- **Confidence** validates that the model isn't randomly guessing (overconfidence >0.9 suggests overfitting)
+
 ### Prediction vs. Actual Rate Comparison
 The system evaluates performance by comparing the model's **Implied Direction** against the **Actual Price Move**.
 - **Buy (1):** Implies a prediction of an upward move.
@@ -97,6 +125,8 @@ Our analysis shows that with a short training cycle (20 episodes), the model ach
 The learning curve (available in the Dashboard) shows the total reward per episode. In early episodes, the agent explores heavily (Epsilon ~1.0), leading to erratic returns. As training progresses, the Dueling DQN begins to favor strategic "Buy" actions during upward trends, stabilizing the portfolio growth.
 
 ## Visual Evaluation & Policy Analysis
+
+⚠️ **Note:** Graphs and metrics will be regenerated after running `python src/train.py --eval` or `python generate_evaluation_graph.py`. Previous mock evaluation artifacts have been removed.
 
 ### Test Set Performance Visualization
 
