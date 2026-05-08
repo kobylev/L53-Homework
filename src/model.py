@@ -8,17 +8,23 @@ class CNNExtractor(nn.Module):
         super(CNNExtractor, self).__init__()
         # 1D CNN along the temporal axis (30 days)
         self.conv1 = nn.Conv1d(in_channels, 32, kernel_size=3, stride=1, padding=1)
+        self.bn1 = nn.BatchNorm1d(32)
         self.conv2 = nn.Conv1d(32, 64, kernel_size=3, stride=1, padding=1)
+        self.bn2 = nn.BatchNorm1d(64)
         self.conv3 = nn.Conv1d(64, 64, kernel_size=3, stride=1, padding=1)
+        self.bn3 = nn.BatchNorm1d(64)
         self.pool = nn.AdaptiveAvgPool1d(1)
-        
+        self.dropout = nn.Dropout(p=0.1)
+
     def forward(self, x):
         # x shape: [Batch, Channels, Time]
-        x = F.relu(self.conv1(x))
-        x = F.relu(self.conv2(x))
-        x = F.relu(self.conv3(x))
+        x = F.relu(self.bn1(self.conv1(x)))
+        x = F.relu(self.bn2(self.conv2(x)))
+        x = F.relu(self.bn3(self.conv3(x)))
         x = self.pool(x) # [Batch, 64, 1]
-        return x.view(x.size(0), -1) # [Batch, 64]
+        x = x.view(x.size(0), -1) # [Batch, 64]
+        x = self.dropout(x)
+        return x
 
 class DuelingDQN(nn.Module):
     def __init__(self, n_actions=3, use_target_network=True):
@@ -40,13 +46,15 @@ class DuelingDQN(nn.Module):
         )
 
         # Target network (frozen copy for stable Q-value bootstrapping)
+        self.target_net = None  # Initialize before conditional
         if use_target_network:
-            self.target_net = deepcopy(self)
-            self.target_net.eval()  # Set to eval mode
+            # Create fresh instance with use_target_network=False to prevent recursion
+            self.target_net = DuelingDQN(n_actions=n_actions, use_target_network=False)
+            # Load weights excluding target_net keys (use strict=False)
+            self.target_net.load_state_dict(self.state_dict(), strict=False)
+            self.target_net.eval()
             for param in self.target_net.parameters():
                 param.requires_grad = False
-        else:
-            self.target_net = None
 
     def forward(self, x):
         features = self.feature_extractor(x)
