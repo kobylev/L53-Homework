@@ -17,20 +17,59 @@ from src.config import *
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+def calculate_risk_metrics(portfolio_values, risk_free_rate=0.02):
+    """
+    FIX: Integrated Risk Metrics calculation.
+    Calculates Sharpe Ratio, Max Drawdown, and Calmar Ratio.
+    """
+    # 1. Daily Returns
+    portfolio_values = np.array(portfolio_values)
+    daily_returns = np.diff(portfolio_values) / portfolio_values[:-1]
+    
+    # 2. Annualized Return
+    total_return = (portfolio_values[-1] / portfolio_values[0]) - 1
+    num_days = len(portfolio_values)
+    annualized_return = (1 + total_return) ** (252 / num_days) - 1
+    
+    # 3. Annualized Sharpe Ratio
+    # Formula: (Avg Return - Risk Free) / Std Dev * sqrt(252)
+    daily_rf = (1 + risk_free_rate) ** (1 / 252) - 1
+    excess_returns = daily_returns - daily_rf
+    sharpe_ratio = np.mean(excess_returns) / (np.std(daily_returns) + 1e-9) * np.sqrt(252)
+    
+    # 4. Maximum Drawdown
+    # Formula: (Peak - Current) / Peak
+    cumulative_max = np.maximum.accumulate(portfolio_values)
+    drawdowns = (cumulative_max - portfolio_values) / cumulative_max
+    max_drawdown = np.max(drawdowns)
+    
+    # 5. Calmar Ratio
+    # Formula: Annualized Return / Absolute Max Drawdown
+    calmar_ratio = annualized_return / (max_drawdown + 1e-9)
+    
+    return {
+        "sharpe_ratio": sharpe_ratio,
+        "max_drawdown": max_drawdown,
+        "calmar_ratio": calmar_ratio,
+        "total_return": total_return
+    }
+
 def evaluate(ticker=None):
     logger.info("Starting evaluation...")
     ticker = ticker or TICKER
     dataset = TradingDataset(ticker=ticker)
-    _, test_data = get_train_test_split(dataset)
     
-    # Need full prices for the test period
-    full_prices = dataset.data['Close'].values * (dataset.max_vals['Close'] - dataset.min_vals['Close']) + dataset.min_vals['Close']
-    split_idx = int(len(dataset.get_windows()) * 0.8)
-    test_prices = full_prices[split_idx : split_idx + len(test_data) + WINDOW_SIZE]
+    # FIX: Logic to handle new get_train_test_split return signature
+    _, test_data, _ = get_train_test_split(dataset)
+    
+    # Test prices for metric calculation
+    df = dataset.data
+    split_idx = int(len(df) * 0.8)
+    test_prices = df['Close'].iloc[split_idx:].values
     
     model = DuelingDQN().to(DEVICE)
     if os.path.exists(MODEL_PATH):
-        model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE))
+        model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE, weights_only=True))
         model.eval()
     else:
         logger.error("No model found to evaluate.")
@@ -39,21 +78,15 @@ def evaluate(ticker=None):
     env = TradingEnv(test_data, test_prices)
     state = env.reset().to(DEVICE)
     
-    actions = []
-    portfolio_values = []
-    rewards = []
-    confidence_levels = []
+    actions, portfolio_values, rewards, confidence_levels = [], [], [], []
     
     done = False
     while not done:
         with torch.no_grad():
             q_values = model(state.unsqueeze(0))
             action = q_values.argmax(dim=1).item()
-            
-            # Confidence Level = Softmax probability of chosen action
             probs = torch.softmax(q_values, dim=1)
-            confidence = probs.max().item()
-            confidence_levels.append(confidence)
+            confidence_levels.append(probs.max().item())
 
         next_state, reward, done, portfolio_value = env.step(action)
         state = next_state.to(DEVICE)
@@ -62,38 +95,25 @@ def evaluate(ticker=None):
         portfolio_values.append(portfolio_value)
         rewards.append(reward)
 
-    # Calculate Win Rate (% of steps with positive reward)
+    # FIX: Calculate advanced risk metrics
+    risk_metrics = calculate_risk_metrics(portfolio_values)
     win_rate = (np.array(rewards) > 0).mean() * 100
-    
-    # Directional Accuracy calculation
-    # Define directional target: 1 if price went up, 0 if down/flat
-    actual_deltas = np.diff(test_prices[WINDOW_SIZE-1:])
-    actual_direction = (actual_deltas > 0).astype(int)
-    
-    # Model's 'implied' direction: Buy (1) implies Up, Sell (2) implies Down, Hold (0) is neutral
-    # To calculate 'Accuracy', we compare if Buy preceded an Up move or Sell preceded a Down move
-    predicted_actions = np.array(actions[:-1]) # exclude last action as we don't have next price
-    correct_directional_predictions = 0
-    total_active_predictions = 0
-    
-    for i in range(len(predicted_actions)):
-        if predicted_actions[i] == 1: # Predicted Up
-            total_active_predictions += 1
-            if actual_direction[i] == 1:
-                correct_directional_predictions += 1
-        elif predicted_actions[i] == 2: # Predicted Down
-            total_active_predictions += 1
-            if actual_direction[i] == 0:
-                correct_directional_predictions += 1
-                
-    directional_accuracy = (correct_directional_predictions / total_active_predictions * 100) if total_active_predictions > 0 else 0
     avg_confidence = np.mean(confidence_levels)
     
-    logger.info(f"Evaluation Complete | Win Rate: {win_rate:.2f}% | Directional Accuracy: {directional_accuracy:.2f}% | Avg Confidence: {avg_confidence:.4f} | Final Portfolio: ${portfolio_values[-1]:.2f}")
+    logger.info("-" * 30)
+    logger.info(f"PERFORMANCE REPORT - {ticker}")
+    logger.info(f"Final Portfolio: ${portfolio_values[-1]:,.2f}")
+    logger.info(f"Total Return: {risk_metrics['total_return']*100:.2f}%")
+    logger.info(f"Win Rate: {win_rate:.2f}%")
+    logger.info(f"Sharpe Ratio: {risk_metrics['sharpe_ratio']:.4f}")
+    logger.info(f"Max Drawdown: {risk_metrics['max_drawdown']*100:.2f}%")
+    logger.info(f"Calmar Ratio: {risk_metrics['calmar_ratio']:.4f}")
+    logger.info(f"Avg Confidence: {avg_confidence:.4f}")
+    logger.info("-" * 30)
     
-    # Save results for Dashboard
+    # Save results
     results = pd.DataFrame({
-        'Date': dataset.data.index[split_idx + WINDOW_SIZE - 1 : split_idx + WINDOW_SIZE - 1 + len(actions)],
+        'Date': df.index[split_idx + WINDOW_SIZE - 1 : split_idx + WINDOW_SIZE - 1 + len(actions)],
         'Price': test_prices[WINDOW_SIZE - 1 : WINDOW_SIZE - 1 + len(actions)],
         'Action': actions,
         'PortfolioValue': portfolio_values,
@@ -101,20 +121,12 @@ def evaluate(ticker=None):
     })
     results.to_csv(os.path.join(LOGS_DIR, "eval_results.csv"), index=False)
     
-    # Save accuracy for README/Analysis
+    # Append risk metrics to CSV for Streamlit dashboard integration
     with open(os.path.join(LOGS_DIR, "metrics.txt"), "w") as f:
-        f.write(f"Win Rate: {win_rate:.2f}%\n")
-        f.write(f"Directional Accuracy: {directional_accuracy:.2f}%\n")
-        f.write(f"Average Confidence: {avg_confidence:.4f}\n")
-        f.write(f"Final Portfolio: ${portfolio_values[-1]:.2f}\n")
-    
-    # Generate Plots
-    plt.figure(figsize=(12, 6))
-    plt.plot(results['Date'], results['PortfolioValue'], label='Portfolio Value')
-    plt.title(f"Portfolio Value Over Time ({TICKER})")
-    plt.legend()
-    plt.savefig(os.path.join(ASSETS_DIR, "portfolio_value.png"))
-    plt.close()
+        for k, v in risk_metrics.items():
+            f.write(f"{k}: {v}\n")
+        f.write(f"win_rate: {win_rate}\n")
+        f.write(f"avg_confidence: {avg_confidence}\n")
 
     return results, win_rate, avg_confidence
 
