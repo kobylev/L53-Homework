@@ -142,7 +142,6 @@ class DuelingTransformerDQN(nn.Module):
         # Combine: Q(s,a) = V(s) + (A(s,a) - mean(A(s,a)))
         return value + (advantage - advantage.mean(dim=1, keepdim=True))
 
-
 def select_action(model, state, epsilon, n_actions=3):
     if torch.rand(1).item() < epsilon:
         return torch.randint(0, n_actions, (1,)).item()
