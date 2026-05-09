@@ -6,7 +6,10 @@
       "Bash(dir:*)",
       "Bash(del generate_mock_evaluation.py evaluation_graph.png)",
       "Bash(pytest:*)",
-      "Bash(nul)"
+      "Bash(nul)",
+      "Bash(git add:*)",
+      "Bash(git restore:*)",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []
