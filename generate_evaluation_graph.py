@@ -157,8 +157,8 @@ def generate_evaluation_graph():
         'Final Portfolio ($)': f"{portfolio_values[-1]:.2f}",
         'ROI (%)': f"{((portfolio_values[-1] - INITIAL_BALANCE) / INITIAL_BALANCE * 100):.2f}"
     }])
-    metrics_df.to_csv(os.path.join(LOGS_DIR, 'eval_results.csv'), index=False)
-    logger.info(f"Metrics saved to {os.path.join(LOGS_DIR, 'eval_results.csv')}")
+    metrics_df.to_csv(os.path.join(LOGS_DIR, 'eval_summary.csv'), index=False)
+    logger.info(f"Metrics saved to {os.path.join(LOGS_DIR, 'eval_summary.csv')}")
 
     # Generate the graph
     logger.info("Generating evaluation graph...")

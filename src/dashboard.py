@@ -110,114 +110,120 @@ RESULTS_CSV = os.path.join(LOGS_DIR, "eval_results.csv")
 
 if os.path.exists(RESULTS_CSV):
     df = pd.read_csv(RESULTS_CSV)
-    df['Date'] = pd.to_datetime(df['Date'])
+    
+    if 'Date' not in df.columns:
+        st.warning("Evaluation results file found, but it appears to be in the summary format. Please run 'src/evaluate.py' to generate detailed step-by-step results for visualization.")
+        st.dataframe(df)
+    else:
+        df['Date'] = pd.to_datetime(df['Date'])
 
-    col1, col2 = st.columns([2, 1])
+        col1, col2 = st.columns([2, 1])
 
-    with col1:
-        st.header("Historical Price & Actions")
+        with col1:
+            st.header("Historical Price & Actions")
 
-        # Fetch OHLC data for candlestick chart
-        try:
-            # Get date range from evaluation results
-            start_date = df['Date'].min().strftime('%Y-%m-%d')
-            end_date = df['Date'].max().strftime('%Y-%m-%d')
+            # Fetch OHLC data for candlestick chart
+            try:
+                # Get date range from evaluation results
+                start_date = df['Date'].min().strftime('%Y-%m-%d')
+                end_date = df['Date'].max().strftime('%Y-%m-%d')
 
-            # Fetch full OHLC data via Gatekeeper
-            ohlc_data = gatekeeper.fetch_stock_data(user_ticker, start_date, end_date)
+                # Fetch full OHLC data via Gatekeeper
+                ohlc_data = gatekeeper.fetch_stock_data(user_ticker, start_date, end_date)
 
-            if ohlc_data is not None and not ohlc_data.empty:
-                # Create candlestick chart
+                if ohlc_data is not None and not ohlc_data.empty:
+                    # Create candlestick chart
+                    fig = go.Figure()
+
+                    fig.add_trace(go.Candlestick(
+                        x=ohlc_data.index,
+                        open=ohlc_data['Open'],
+                        high=ohlc_data['High'],
+                        low=ohlc_data['Low'],
+                        close=ohlc_data['Close'],
+                        name='OHLC',
+                        increasing_line_color='green',
+                        decreasing_line_color='red'
+                    ))
+
+                    # Overlay Buy/Sell signals
+                    buy_signals = df[df['Action'] == 1]
+                    sell_signals = df[df['Action'] == 2]
+
+                    fig.add_trace(go.Scatter(
+                        x=buy_signals['Date'],
+                        y=buy_signals['Price'],
+                        mode='markers',
+                        marker=dict(symbol='triangle-up', size=12, color='lime', line=dict(color='darkgreen', width=1)),
+                        name='Buy Signal'
+                    ))
+
+                    fig.add_trace(go.Scatter(
+                        x=sell_signals['Date'],
+                        y=sell_signals['Price'],
+                        mode='markers',
+                        marker=dict(symbol='triangle-down', size=12, color='red', line=dict(color='darkred', width=1)),
+                        name='Sell Signal'
+                    ))
+
+                    fig.update_layout(
+                        height=500,
+                        xaxis_title="Date",
+                        yaxis_title="Price ($)",
+                        xaxis_rangeslider_visible=False,  # Disable rangeslider for cleaner view
+                        hovermode='x unified'
+                    )
+
+                    st.plotly_chart(fig, use_container_width=True)
+
+                else:
+                    # Fallback to line chart if OHLC data unavailable
+                    st.warning("OHLC data unavailable, showing close price only")
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(x=df['Date'], y=df['Price'], name='Close Price', line=dict(color='blue')))
+
+                    buy_signals = df[df['Action'] == 1]
+                    sell_signals = df[df['Action'] == 2]
+
+                    fig.add_trace(go.Scatter(x=buy_signals['Date'], y=buy_signals['Price'], mode='markers',
+                                             marker=dict(symbol='triangle-up', size=10, color='green'), name='Buy'))
+                    fig.add_trace(go.Scatter(x=sell_signals['Date'], y=sell_signals['Price'], mode='markers',
+                                             marker=dict(symbol='triangle-down', size=10, color='red'), name='Sell'))
+
+                    fig.update_layout(height=500, xaxis_title="Date", yaxis_title="Price")
+                    st.plotly_chart(fig, use_container_width=True)
+
+            except Exception as e:
+                st.error(f"Error loading OHLC data: {e}")
+                # Ultra-fallback: show eval results only
                 fig = go.Figure()
-
-                fig.add_trace(go.Candlestick(
-                    x=ohlc_data.index,
-                    open=ohlc_data['Open'],
-                    high=ohlc_data['High'],
-                    low=ohlc_data['Low'],
-                    close=ohlc_data['Close'],
-                    name='OHLC',
-                    increasing_line_color='green',
-                    decreasing_line_color='red'
-                ))
-
-                # Overlay Buy/Sell signals
-                buy_signals = df[df['Action'] == 1]
-                sell_signals = df[df['Action'] == 2]
-
-                fig.add_trace(go.Scatter(
-                    x=buy_signals['Date'],
-                    y=buy_signals['Price'],
-                    mode='markers',
-                    marker=dict(symbol='triangle-up', size=12, color='lime', line=dict(color='darkgreen', width=1)),
-                    name='Buy Signal'
-                ))
-
-                fig.add_trace(go.Scatter(
-                    x=sell_signals['Date'],
-                    y=sell_signals['Price'],
-                    mode='markers',
-                    marker=dict(symbol='triangle-down', size=12, color='red', line=dict(color='darkred', width=1)),
-                    name='Sell Signal'
-                ))
-
-                fig.update_layout(
-                    height=500,
-                    xaxis_title="Date",
-                    yaxis_title="Price ($)",
-                    xaxis_rangeslider_visible=False,  # Disable rangeslider for cleaner view
-                    hovermode='x unified'
-                )
-
+                fig.add_trace(go.Scatter(x=df['Date'], y=df['Price'], name='Price', line=dict(color='blue')))
                 st.plotly_chart(fig, use_container_width=True)
+            
+            st.header("Portfolio Value")
+            fig_portfolio = go.Figure()
+            fig_portfolio.add_trace(go.Scatter(x=df['Date'], y=df['PortfolioValue'], name='Portfolio', fill='tozeroy'))
+            fig_portfolio.update_layout(height=400, xaxis_title="Date", yaxis_title="Balance ($)")
+            st.plotly_chart(fig_portfolio, use_container_width=True)
 
-            else:
-                # Fallback to line chart if OHLC data unavailable
-                st.warning("OHLC data unavailable, showing close price only")
-                fig = go.Figure()
-                fig.add_trace(go.Scatter(x=df['Date'], y=df['Price'], name='Close Price', line=dict(color='blue')))
+        with col2:
+            st.header("Performance Metrics")
+            final_portfolio = df['PortfolioValue'].iloc[-1]
+            initial_balance = 10000.0
+            total_return = ((final_portfolio - initial_balance) / initial_balance) * 100
+            
+            st.metric("Final Portfolio", f"${final_portfolio:,.2f}", f"{total_return:.2f}%")
+            
+            avg_confidence = df['Confidence'].mean()
+            st.metric("Avg Confidence", f"{avg_confidence:.4f}")
+            
+            # Reward Curve from logs
+            rewards_path = os.path.join(LOGS_DIR, "rewards.npy")
+            if os.path.exists(rewards_path):
+                rewards = np.load(rewards_path)
+                st.header("Learning Curve")
+                st.line_chart(rewards)
 
-                buy_signals = df[df['Action'] == 1]
-                sell_signals = df[df['Action'] == 2]
-
-                fig.add_trace(go.Scatter(x=buy_signals['Date'], y=buy_signals['Price'], mode='markers',
-                                         marker=dict(symbol='triangle-up', size=10, color='green'), name='Buy'))
-                fig.add_trace(go.Scatter(x=sell_signals['Date'], y=sell_signals['Price'], mode='markers',
-                                         marker=dict(symbol='triangle-down', size=10, color='red'), name='Sell'))
-
-                fig.update_layout(height=500, xaxis_title="Date", yaxis_title="Price")
-                st.plotly_chart(fig, use_container_width=True)
-
-        except Exception as e:
-            st.error(f"Error loading OHLC data: {e}")
-            # Ultra-fallback: show eval results only
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=df['Date'], y=df['Price'], name='Price', line=dict(color='blue')))
-            st.plotly_chart(fig, use_container_width=True)
-        
-        st.header("Portfolio Value")
-        fig_portfolio = go.Figure()
-        fig_portfolio.add_trace(go.Scatter(x=df['Date'], y=df['PortfolioValue'], name='Portfolio', fill='tozeroy'))
-        fig_portfolio.update_layout(height=400, xaxis_title="Date", yaxis_title="Balance ($)")
-        st.plotly_chart(fig_portfolio, use_container_width=True)
-
-    with col2:
-        st.header("Performance Metrics")
-        final_portfolio = df['PortfolioValue'].iloc[-1]
-        initial_balance = 10000.0
-        total_return = ((final_portfolio - initial_balance) / initial_balance) * 100
-        
-        st.metric("Final Portfolio", f"${final_portfolio:,.2f}", f"{total_return:.2f}%")
-        
-        avg_confidence = df['Confidence'].mean()
-        st.metric("Avg Confidence", f"{avg_confidence:.4f}")
-        
-        # Reward Curve from logs
-        rewards_path = os.path.join(LOGS_DIR, "rewards.npy")
-        if os.path.exists(rewards_path):
-            rewards = np.load(rewards_path)
-            st.header("Learning Curve")
-            st.line_chart(rewards)
 
 else:
     st.warning("Evaluation results not found. Please run the training and evaluation first.")

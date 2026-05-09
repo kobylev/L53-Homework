@@ -4,7 +4,7 @@ This module provides hypothesis tests to determine whether observed
 performance metrics differ meaningfully from random-baseline behaviour.
 The tests are intended to be called from ``src/evaluate.py`` after a
 test-set evaluation has been run; their outputs are reported alongside
-the headline metrics in ``assets/logs/eval_results.csv``.
+the headline metrics in ``assets/logs/eval_summary.csv``.
 
 Two independent tests are provided for directional accuracy:
 

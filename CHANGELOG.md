@@ -52,6 +52,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Risk metrics in evaluation**: `eval_results.csv` now stores
   Sharpe / MDD / Calmar computed from the actual test-set
   portfolio (commit `ff08d59`).
+- **Dashboard KeyError**: Fixed a filename collision where `generate_evaluation_graph.py` was overwriting the detailed evaluation data in `eval_results.csv` with summary metrics. Summary metrics are now saved to `eval_summary.csv`, and `src/dashboard.py` is now robust to missing columns.
 - **Gatekeeper ticker validation**: whitelist regex now allows
   optional letter suffix for tickers such as `BRK.B` (commit
   `e200c01`).
