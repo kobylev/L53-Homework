@@ -175,13 +175,13 @@ throughout the codebase.*
 | Metric                  | Value   | Formula                                                                          |
 | ----------------------- | ------- | -------------------------------------------------------------------------------- |
 | Sharpe Ratio            |  1.85   | $\frac{E[R - R_f]}{\sigma(R - R_f)} \cdot \sqrt{252}$                            |
-| Sortino Ratio           |  *see eval_results.csv* | as above, with downside-deviation in the denominator              |
+| Sortino Ratio           |  *see eval_summary.csv* | as above, with downside-deviation in the denominator              |
 | Maximum Drawdown        | −14.2%  | $\min_t \frac{P_t - \max_{s \le t} P_s}{\max_{s \le t} P_s}$                     |
 | Calmar Ratio            |  2.15   | $\frac{\text{annualised return}}{\lvert \text{max drawdown} \rvert}$             |
-| Annualised Volatility   |  *see eval_results.csv* | $\sigma(R) \cdot \sqrt{252}$                                       |
+| Annualised Volatility   |  *see eval_summary.csv* | $\sigma(R) \cdot \sqrt{252}$                                       |
 
 These quantities are computed by `src/risk_metrics.py` and persisted
-to `assets/logs/eval_results.csv`. Their numerical correctness is
+to `assets/logs/eval_summary.csv`. Their numerical correctness is
 pinned by `tests/test_metrics.py`.
 
 ### Statistical Significance of Directional Accuracy
@@ -306,6 +306,32 @@ streamlit run src/dashboard.py        # http://localhost:8501
 # Run tests
 pytest tests/ -v
 ```
+
+## Interactive Dashboard
+
+The project includes a **Streamlit-based web dashboard** for real-time monitoring, visualization, and simulation control. The dashboard provides a comprehensive interface for analyzing model performance, tracking system telemetry, and running backtests on different stock tickers.
+
+![Dashboard Screenshot](assets/ui_screenshot_1.png)
+
+### Key Features
+
+- **Real-Time System Telemetry**: Monitor CPU usage, memory consumption, and GPU metrics (if available) with live updating graphs
+- **Learning Curves Visualization**: View training progress through interactive plots of episode rewards and losses over time
+- **Model Evaluation**: Run on-demand simulations for any stock ticker and visualize trading signals alongside price movements
+- **Portfolio Analytics**: Track portfolio value evolution, win rates, directional accuracy, and confidence intervals
+- **Risk Metrics**: Display Sharpe ratio, Sortino ratio, maximum drawdown, and other risk-adjusted performance indicators
+- **Interactive Controls**: Select tickers, trigger evaluations, and explore historical backtest results through an intuitive sidebar interface
+
+### Launching the Dashboard
+
+```bash
+# Start the dashboard server
+streamlit run src/dashboard.py
+
+# Access in your browser at http://localhost:8501
+```
+
+The dashboard automatically reads from saved model checkpoints (`assets/trading_model.pth`) and training logs (`assets/logs/*.npy`), so you must train at least once before meaningful visualizations appear.
 
 ## Docker
 
