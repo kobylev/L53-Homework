@@ -1,131 +1,65 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes to this project are documented in this file.
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [2026-05-08] - Academic Quality Improvements (A- → A+)
+## [Unreleased] — Round 2 fixes
 
-### FIX 1 - Data Leakage Prevention (CRITICAL)
-**Status:** In Progress
-**Issue:** Min-Max scaler was fit on full dataset before train/test split, leaking future statistics into training.
-**Solution:** Refactored `get_train_test_split()` to fit scaler exclusively on training data, then apply frozen transform to test set.
-**Before:**
-- Scaler fit on full dataset (N=2268 samples MSFT 2015-2023)
-- Test min/max leaked into training normalization
+### Added
+- `src/risk_metrics.py` — module computing Sharpe, Sortino, Calmar,
+  max drawdown, annualised volatility and total/annualised return
+  from a portfolio-value trajectory. Numerically validated against
+  closed-form known cases in `tests/test_metrics.py`.
+- `src/significance_tests.py` — one-sided binomial test and
+  permutation test for directional accuracy, with Wilson 95%
+  confidence intervals.
+- `tests/` — pytest suite with three modules:
+  - `test_no_leakage.py`: chronological-split, train-only scaler,
+    and look-ahead-bias regression checks.
+  - `test_metrics.py`: 14 unit tests pinning the math of all
+    risk metrics and significance tests.
+  - `test_gatekeeper.py`: ticker whitelist, filename sanitisation,
+    rate-limiter and SHA-256-is-not-a-defense regression checks.
+- `evaluation_graph.png` — dual-panel test-set visualisation
+  (price with Buy/Sell/Hold markers + portfolio trajectory). Now
+  embedded in the README.
 
-**After:**
-- Scaler fit only on train split (N=1814 samples, 80%)
-- Test set (N=454 samples, 20%) uses train-derived statistics
-- Added `test_no_leakage.py` with assertions
+### Changed
+- README.md rewritten in academic tone:
+  - Emoji removed from all section headers.
+  - "Production-Ready", "17.8x improvement", "All course standards
+    met" and similar marketing phrases replaced with neutral
+    technical language.
+  - "Honest Assessment" / "Project Summary & Achievements" /
+    "Files & Deliverables" promotional sections removed; replaced
+    with one consolidated "Limitations" subsection.
+  - Win-rate metric split into two clearly named quantities used
+    consistently throughout: **Positive-Step Rate** (% of
+    timesteps with positive portfolio change) and **Trade Win
+    Rate** (% of profitable closed positions).
+  - Directional accuracy now reported with a binomial test
+    p-value and a Wilson 95% confidence interval.
+  - Security section corrected — SHA-256 ticker hashing is
+    described as a logging-privacy measure, not as an
+    injection-prevention mechanism. Whitelist regex
+    (`^[A-Z]{1,5}(\.[A-Z])?$`) is now stated as the actual
+    injection defense.
+  - Abstract reformatted to a single coherent paragraph.
 
-**Impact:** TBD after retraining
+### Fixed (carried over from earlier commits — for the record)
+- **Data leakage**: Min-Max scaler is fit only on the training
+  slice prior to applying to the test slice (commit `05df107`).
+- **Risk metrics in evaluation**: `eval_results.csv` now stores
+  Sharpe / MDD / Calmar computed from the actual test-set
+  portfolio (commit `ff08d59`).
+- **Gatekeeper ticker validation**: whitelist regex now allows
+  optional letter suffix for tickers such as `BRK.B` (commit
+  `e200c01`).
 
----
-
-### FIX 2 - Risk-Adjusted Metrics Implementation
-**Status:** ✅ Complete
-**Issue:** README contained [PLACEHOLDER] for Sharpe Ratio, Max Drawdown, Calmar Ratio, Sortino Ratio, Volatility. Only 3/5 metrics were implemented in evaluate.py.
-**Solution:** Implemented all 5 risk-adjusted metrics in `src/evaluate.py` (lines 20-70) with mathematically correct formulas validated by test suite.
-
-**Metrics implemented:**
-- Sharpe Ratio (annualized): (mean_return - Rf) / std(returns) * sqrt(252)
-- Sortino Ratio (annualized): mean_return / downside_std * sqrt(252) [NEW]
-- Max Drawdown (%): min((portfolio - running_max) / running_max)
-- Calmar Ratio: annualized_return / abs(max_drawdown)
-- Annualized Volatility: std(returns) * sqrt(252) [NEW]
-
-**Code Changes:**
-- Added Sortino Ratio calculation (lines 50-57)
-- Added Annualized Volatility calculation (lines 59-61)
-- Updated logging to display all 5 metrics (lines 123-127)
-- Fixed wildcard import: `from src.config import *` → explicit imports (line 14)
-
-**Before:** Sharpe=1.85, MDD=-14.2%, Calmar=2.15, Sortino=missing, Volatility=missing
-**After:** All 5 metrics will be computed from real portfolio trajectory after model retraining
-
----
-
-### FIX 3 - Win Rate Definition Clarity
-**Status:** Pending
-**Issue:** Code computes "% positive steps" but labels it "Win Rate (% profitable trades)" - conflating two different metrics
-**Solution:** Report BOTH metrics with distinct names:
-- "Positive Step Rate": % timesteps with portfolio value increase
-- "Trade Win Rate": % profitable round-trip Buy→Sell transactions
-
-**Before:** Single ambiguous "Win Rate" metric
-**After:** TBD after evaluation run
-
----
-
-### FIX 4 - Statistical Significance Testing
-**Status:** Pending
-**Issue:** 52.34% directional accuracy vs 50% baseline lacks significance test
-**Solution:** Added binomial test and permutation test to `evaluate.py`
-- Binomial test: H0: accuracy = 0.5, H1: accuracy > 0.5
-- 95% Wilson confidence interval
-- Permutation test (1000 shuffles)
-
-**Before:** No statistical validation
-**After:** TBD (p-value and CI to be reported)
-
----
-
-### FIX 5 - Gatekeeper Security Hardening
-**Status:** Pending
-**Issue:** SHA-256 ticker hashing provides security theater, not real validation
-**Solution:**
-- Added whitelist regex: `^[A-Z]{1,5}(\.[A-Z])?$`
-- Added date parsing validation
-- Added path sanitization via `pathlib.Path.name`
-- Updated README to describe actual defenses (rate limiting, input validation, path traversal prevention)
-
-**Before:** Claims SHA-256 prevents injection attacks
-**After:** Honest description of real protections
-
----
-
-### FIX 6 - Academic Tone Refinement
-**Status:** Pending
-**Issue:** README contains emoji in headers, marketing language, self-congratulatory sections
-**Solution:**
-- Removed all emoji from section headers
-- Removed phrases: "Production-Ready", "Exceptional", "17.8x improvement!", promotional sections
-- Rewrote Abstract as single 150-250 word paragraph
-- Added neutral "Limitations" and "Future Work" sections
-
-**Before:** Marketing-style documentation
-**After:** Academic journal-style documentation
-
----
-
-### FIX 7 - Code Quality Improvements
-**Status:** Pending
-**Issue:**
-- `from src.config import *` used in multiple files
-- Missing type hints
-- No tests/ directory
-
-**Solution:**
-- Replaced wildcard imports with explicit named imports
-- Added type hints to all public functions
-- Created tests/ directory with:
-  - `test_no_leakage.py`
-  - `test_metrics.py`
-  - `test_gatekeeper.py`
-- All tests pass via `pytest tests/`
-
-**Before:** No tests, unclear imports
-**After:** Full test coverage, explicit imports, type-safe code
-
----
-
-## Acceptance Checklist
-- [ ] No PLACEHOLDER strings in codebase
-- [ ] No "mock" references in README.md
-- [ ] generate_mock_evaluation.py deleted
-- [ ] tests/ directory exists, `pytest tests/` green
-- [ ] Real Sharpe, MDD, Calmar, Sortino, Vol in README
-- [ ] Consistent win-rate metric naming
-- [ ] p-value reported for directional accuracy
-- [ ] No emoji in README headers
-- [ ] CHANGELOG documents all fixes
-- [ ] One git commit per FIX
+### Outstanding (deferred)
+- Re-run end-to-end training and re-generate
+  `evaluation_graph.png`, `eval_results.csv` and the headline
+  metrics in the README from the post-leakage-fix model. The
+  numbers currently in the README are inherited from the
+  pre-fix run; until retraining completes, the directional
+  accuracy figure must be interpreted as provisional.
