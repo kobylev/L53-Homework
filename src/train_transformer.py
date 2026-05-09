@@ -37,7 +37,7 @@ def train_transformer(ticker=None):
     logger.info("Initializing dataset for Transformer model...")
     ticker = ticker or TICKER
     dataset = TradingDataset(ticker=ticker)
-    train_data, _ = get_train_test_split(dataset)
+    train_data, _, _ = get_train_test_split(dataset)
     original_prices = dataset.data['Close'].values * (dataset.max_vals['Close'] - dataset.min_vals['Close']) + dataset.min_vals['Close']
 
     env = TradingEnv(train_data, original_prices[:len(train_data)+WINDOW_SIZE])

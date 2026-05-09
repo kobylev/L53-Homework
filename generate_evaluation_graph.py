@@ -70,7 +70,7 @@ def generate_evaluation_graph():
 
     # Load dataset
     dataset = TradingDataset(ticker=TICKER)
-    train_data, test_data = get_train_test_split(dataset)
+    train_data, test_data, _ = get_train_test_split(dataset)
 
     # Get original prices
     original_prices = dataset.data['Close'].values * (dataset.max_vals['Close'] - dataset.min_vals['Close']) + dataset.min_vals['Close']

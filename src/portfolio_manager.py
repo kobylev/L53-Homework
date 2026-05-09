@@ -199,7 +199,7 @@ class MultiTickerPortfolio:
                 continue
 
             dataset = self.datasets[ticker]
-            _, ticker_test_data = get_train_test_split(dataset, split_ratio=1-test_ratio)
+            _, ticker_test_data, _ = get_train_test_split(dataset, split_ratio=1-test_ratio)
 
             # Get original prices
             original_prices = dataset.data['Close'].values * (dataset.max_vals['Close'] - dataset.min_vals['Close']) + dataset.min_vals['Close']

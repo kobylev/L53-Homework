@@ -75,7 +75,7 @@ def compare_models(ticker=None):
     logger.info("Loading dataset for model comparison...")
     ticker = ticker or TICKER
     dataset = TradingDataset(ticker=ticker)
-    _, test_data = get_train_test_split(dataset)
+    _, test_data, _ = get_train_test_split(dataset)
     original_prices = dataset.data['Close'].values * (dataset.max_vals['Close'] - dataset.min_vals['Close']) + dataset.min_vals['Close']
 
     # Adjust slice for test data
