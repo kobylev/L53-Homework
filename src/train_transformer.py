@@ -92,7 +92,7 @@ def train_transformer(ticker=None):
                     next_q_values = target_net(next_states).max(1)[0]
                     target_q_values = rewards + (GAMMA * next_q_values * (1 - dones))
 
-                loss = nn.MSELoss()(current_q_values.squeeze(), target_q_values)
+                loss = nn.SmoothL1Loss()(current_q_values.squeeze(), target_q_values)
                 optimizer.zero_grad()
                 loss.backward()
                 # Gradient clipping to prevent explosion during long training

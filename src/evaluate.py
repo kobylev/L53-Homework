@@ -75,12 +75,11 @@ def evaluate(ticker=None):
     dataset = TradingDataset(ticker=ticker)
     
     # FIX: Logic to handle new get_train_test_split return signature
-    _, test_data, _ = get_train_test_split(dataset)
-    
-    # Test prices for metric calculation
-    df = dataset.data
-    split_idx = int(len(df) * 0.8)
-    test_prices = df['Close'].iloc[split_idx:].values
+    train_data, test_data, scaler = get_train_test_split(dataset)
+    # split_idx כבר מחושב שם — החזר אותו:
+    # return train_windows, test_windows, scaler, split_idx
+    split_idx = get_train_test_split(dataset)[3]
+    test_prices = dataset.data['Close'].iloc[split_idx + WINDOW_SIZE - 1:].values[:len(test_data)]
     
     model = DuelingDQN().to(DEVICE)
     if os.path.exists(MODEL_PATH):

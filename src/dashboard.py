@@ -206,24 +206,57 @@ if os.path.exists(RESULTS_CSV):
             fig_portfolio.update_layout(height=400, xaxis_title="Date", yaxis_title="Balance ($)")
             st.plotly_chart(fig_portfolio, use_container_width=True)
 
-        with col2:
-            st.header("Performance Metrics")
-            final_portfolio = df['PortfolioValue'].iloc[-1]
-            initial_balance = 10000.0
-            total_return = ((final_portfolio - initial_balance) / initial_balance) * 100
-            
-            st.metric("Final Portfolio", f"${final_portfolio:,.2f}", f"{total_return:.2f}%")
-            
-            avg_confidence = df['Confidence'].mean()
-            st.metric("Avg Confidence", f"{avg_confidence:.4f}")
-            
-            # Reward Curve from logs
-            rewards_path = os.path.join(LOGS_DIR, "rewards.npy")
-            if os.path.exists(rewards_path):
-                rewards = np.load(rewards_path)
-                st.header("Learning Curve")
-                st.line_chart(rewards)
+       with col2:
+    st.header("Performance Metrics")
+    final_portfolio = df['PortfolioValue'].iloc[-1]
+    initial_balance = 10000.0
+    total_return = ((final_portfolio - initial_balance) / initial_balance) * 100
 
+    st.metric("Final Portfolio", f"${final_portfolio:,.2f}", f"{total_return:.2f}%")
+
+    avg_confidence = df['Confidence'].mean()
+    st.metric("Avg Confidence", f"{avg_confidence:.4f}")
+
+    # ── Load & display metrics from evaluate.py ──────────────────────────
+    metrics_path = os.path.join(LOGS_DIR, "metrics.txt")
+    if os.path.exists(metrics_path):
+        try:
+            with open(metrics_path) as f:
+                metrics = {}
+                for line in f:
+                    if ": " in line:
+                        key, val = line.strip().split(": ", 1)
+                        metrics[key.strip()] = val.strip()
+
+            st.divider()
+            st.subheader("Risk & Return Metrics")
+
+            sharpe   = float(metrics.get("sharpe_ratio",   0))
+            drawdown = float(metrics.get("max_drawdown",   0))
+            win_rate = float(metrics.get("win_rate",       0))
+            dir_acc  = float(metrics.get("directional_accuracy", 0))
+
+            st.metric("Sharpe Ratio",          f"{sharpe:.3f}",
+                      help="Risk-adjusted return (annualized). >1 = good, >2 = excellent.")
+            st.metric("Max Drawdown",          f"{drawdown * 100:.1f}%",
+                      help="Largest peak-to-trough loss during test period.")
+            st.metric("Win Rate",              f"{win_rate * 100:.1f}%",
+                      help="% of closed trades that were profitable.")
+            st.metric("Directional Accuracy",  f"{dir_acc * 100:.1f}%",
+                      help="% of Buy/Sell actions where price moved in predicted direction.")
+
+        except Exception as e:
+            st.warning(f"Could not load metrics.txt: {e}")
+    else:
+        st.info("Run evaluation first to see risk metrics.")
+    # ─────────────────────────────────────────────────────────────────────
+
+    # Reward Curve from logs
+    rewards_path = os.path.join(LOGS_DIR, "rewards.npy")
+    if os.path.exists(rewards_path):
+        rewards = np.load(rewards_path)
+        st.header("Learning Curve")
+        st.line_chart(rewards)
 
 else:
     st.warning("Evaluation results not found. Please run the training and evaluation first.")

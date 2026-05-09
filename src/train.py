@@ -43,8 +43,8 @@ def train(ticker=None):
     env = TradingEnv(train_data, original_prices[:len(train_data)+WINDOW_SIZE])
     
     # Initialize models
-    policy_net = DuelingDQN().to(DEVICE)
-    target_net = DuelingDQN().to(DEVICE)
+    policy_net = DuelingDQN(use_target_network=False).to(DEVICE)
+    target_net = DuelingDQN(use_target_network=False).to(DEVICE)
     target_net.load_state_dict(policy_net.state_dict())
     target_net.eval()
     
