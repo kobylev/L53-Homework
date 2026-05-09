@@ -73,7 +73,7 @@ def generate_evaluation_graph():
     train_data, test_data, _ = get_train_test_split(dataset)
 
     # Get original prices
-    original_prices = dataset.data['Close'].values * (dataset.max_vals['Close'] - dataset.min_vals['Close']) + dataset.min_vals['Close']
+    original_prices = dataset.data['Close'].values
 
     # Split prices for test set
     split_idx = int(len(dataset.data) * 0.8)

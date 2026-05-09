@@ -76,7 +76,7 @@ def compare_models(ticker=None):
     ticker = ticker or TICKER
     dataset = TradingDataset(ticker=ticker)
     _, test_data, _ = get_train_test_split(dataset)
-    original_prices = dataset.data['Close'].values * (dataset.max_vals['Close'] - dataset.min_vals['Close']) + dataset.min_vals['Close']
+    original_prices = dataset.data['Close'].values
 
     # Adjust slice for test data
     split_idx = int(len(dataset.data) * 0.8)
