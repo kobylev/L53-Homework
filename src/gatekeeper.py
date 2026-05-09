@@ -1,5 +1,6 @@
 import time
-import re
+import re  
+from pathlib import PurePosixPath
 import logging
 import random
 import hashlib
@@ -74,7 +75,41 @@ class Gatekeeper:
             raise ValueError(f"Invalid or malicious ticker: {ticker}")
 
         return ticker
+    def sanitize_filename(self, name: str) -> str:
+        """Reduce a candidate filename to a safe basename.
 
+        Strips path separators, drive letters, and traversal sequences.
+        Used before any path is constructed under ``assets/`` so that an
+        attacker cannot influence the on-disk write target.
+
+        Raises
+        ------
+        ValueError
+            If ``name`` is empty, whitespace-only, or resolves to a
+            path component that cannot be safely written
+            (``""``, ``"."``, ``".."``).
+        """
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("Filename must be a non-empty string.")
+
+        # Normalise Windows separators to POSIX so we can use one parser.
+        candidate = name.replace("\\", "/")
+        base = PurePosixPath(candidate).name
+
+        # Strip any drive-letter prefix that survived (e.g. "C:foo").
+        if ":" in base:
+            base = base.split(":")[-1]
+
+        if (not base
+                or base in (".", "..")
+                or "/" in base
+                or "\\" in base):
+            logger.warning(
+                f"SECURITY ALERT: Unsafe filename blocked: {name!r}"
+            )
+            raise ValueError(f"Unsafe filename: {name!r}")
+
+        return base
     def _rate_limit(self):
         """
         Load Balancing & Rate Limiting: Manages traffic to adhere to free-tier limits.
